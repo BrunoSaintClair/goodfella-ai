@@ -1,0 +1,37 @@
+[project]
+name = "goodfella"
+version = "0.1.0"
+description = "Strict Pair Programmer CLI — AI-powered software architecture reviewer"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=0.3",
+    "langchain-community>=0.3",
+    "langchain-ollama>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-google-genai>=2.0",
+    "langchain-anthropic>=0.3",
+    "chromadb>=0.5",
+    "rich>=13.0",
+    "prompt-toolkit>=3.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+goodfella = "goodfella.cli.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/goodfella"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]
