@@ -9,6 +9,7 @@ from goodfella.core.constants import (
     IGNORED_DIRS,
     SUPPORTED_EXTENSIONS,
 )
+from unittest.mock import patch
 
 
 class TestPackageSetup:
@@ -57,7 +58,12 @@ class TestEntryPoint:
         from goodfella.cli.app import main
         assert callable(main)
 
-    def test_main_returns_none(self):
+    @patch('goodfella.cli.app.console.input', return_value='/exit')
+    @patch('goodfella.cli.app.init_environment')
+    @patch('goodfella.cli.app.sync_rules')
+    @patch('goodfella.cli.app.run_indexing_pipeline')
+    @patch('goodfella.cli.app.get_llm')
+    def test_main_returns_none(self, mock_llm, mock_index, mock_sync, mock_init, mock_input):
         from goodfella.cli.app import main
         result = main()
         assert result is None
