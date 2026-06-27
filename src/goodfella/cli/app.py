@@ -26,7 +26,7 @@ from goodfella.knowledge.rules import sync_rules
 from goodfella.llm.factory import get_llm
 from goodfella.llm.memory import load_history, save_message, clear_history
 from goodfella.cli.ui import console, show_spinner
-from goodfella.cli.commands import handle_setup, handle_status, handle_refresh, handle_rebuild, handle_help, handle_review
+from goodfella.cli.commands import handle_setup, handle_status, handle_refresh, handle_rebuild, handle_help, handle_review, handle_deep_review
 
 def print_welcome():
     console.print("\n[bold magenta]🎩 Goodfella AI Pair Programmer[/bold magenta]")
@@ -92,6 +92,12 @@ def main() -> None:
             
             if cmd.startswith("/review"):
                 user_msg, sys_prompt = handle_review(cmd)
+                if not user_msg:
+                    continue
+                user_input = user_msg
+                system_prompt = sys_prompt
+            elif cmd.startswith("/deep-review"):
+                user_msg, sys_prompt = handle_deep_review(cmd)
                 if not user_msg:
                     continue
                 user_input = user_msg

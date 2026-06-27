@@ -15,7 +15,7 @@ from goodfella.core.config import load_config, save_config, DEFAULT_CONFIG
 from goodfella.core.env import init_environment
 from goodfella.rag.db import get_client, get_collection, get_db_path
 from goodfella.rag.chunker import run_indexing_pipeline
-from goodfella.knowledge.rules import sync_rules
+from goodfella.knowledge.rules import sync_rules, get_rules_directories
 
 def handle_setup() -> None:
     """
@@ -127,6 +127,7 @@ def handle_help() -> None:
         ("/refresh", "Força a sincronização dos arquivos do projeto com o banco vetorial local."),
         ("/rebuild", "Apaga fisicamente o banco vetorial e reconstrói do zero (útil para corrupções)."),
         ("/review [arquivos]", "Inicia revisão de código cruzada com regras arquiteturais via RAG."),
+        ("/deep-review", "Faz o bypass do RAG e empacota todo o projeto + regras para o LLM (O Curinga)."),
         ("/clear", "Limpa a tela do terminal."),
         ("/reset", "Apaga o histórico de conversação atual."),
         ("/exit ou /quit", "Encerra a aplicação.")
@@ -218,3 +219,77 @@ def handle_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
     
     return user_message, system_prompt
 
+
+def handle_deep_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Inicia o fluxo do comando /deep-review ("Curinga da Nuvem").
+    Faz o bypass do ChromaDB e carrega fisicamente todo o repositório
+    mais os arquivos de regras (.md) em um único pacote gigantesco.
+    Alerta o usuário sobre custos e envia tudo no System Prompt.
+    """
+    console.print("\n[bold magenta]=== Iniciando Deep Review ===[/bold magenta]")
+    console.print("[info]Fazendo varredura completa do repositório (bypass RAG)...[/info]")
+    
+    valid_files = scan_workspace()
+    
+    if not valid_files:
+        console.print("[warning]Nenhum arquivo válido encontrado no projeto.[/warning]")
+        return None, None
+        
+    code_contents = []
+    total_chars = 0
+    
+    for f_path in valid_files:
+        try:
+            content = f_path.read_text(encoding="utf-8")
+            rel_path = str(f_path.relative_to(Path.cwd()))
+            formatted_content = f"--- Arquivo: {rel_path} ---\n{content}"
+            code_contents.append(formatted_content)
+            total_chars += len(formatted_content)
+        except Exception:
+            pass
+            
+    rules_contents = []
+    rules_dirs = get_rules_directories()
+    for r_dir in rules_dirs:
+        if not r_dir.exists() or not r_dir.is_dir():
+            continue
+        for md_file in r_dir.glob("**/*.md"):
+            try:
+                content = md_file.read_text(encoding="utf-8")
+                rules_contents.append(f"--- Regra: {md_file.name} ---\n{content}")
+                total_chars += len(content)
+            except Exception:
+                pass
+                
+    total_files = len(valid_files)
+    approx_tokens = total_chars // 4
+    
+    console.print(f"\n[warning]O projeto contém {total_files} arquivos e ~{approx_tokens} tokens (incluindo as regras).[/warning]")
+    console.print("Este comando enviará TODO O REPOSITÓRIO como contexto para o LLM.")
+    console.print("Dependendo do provedor (ex: OpenAI, Anthropic, Gemini), isso pode [bold red]incorrer em altos custos[/bold red].")
+    console.print("Dica: Use LLMs que suportam 'Prompt Caching'.")
+    
+    if not Confirm.ask("Deseja realmente prosseguir e realizar o Deep Review?"):
+        console.print("[info]Operação cancelada.[/info]\n")
+        return None, None
+        
+    combined_code = "\n\n".join(code_contents)
+    combined_rules = "\n\n".join(rules_contents)
+    
+    system_prompt = (
+        "Você é o Goodfella, um AI Pair Programmer Arquiteto Sênior.\n"
+        "Foi solicitado um DEEP REVIEW. Isso significa que você tem acesso integral a toda a base de código "
+        "deste projeto, além de todas as Regras de Arquitetura.\n\n"
+        "Sua missão é identificar gargalos arquiteturais severos, acoplamento indevido, e sugerir melhorias "
+        "sistêmicas de altíssimo nível. Relacione as diferentes partes do sistema.\n\n"
+        "REGRAS E BOAS PRÁTICAS DO PROJETO:\n"
+        f"{combined_rules}\n\n"
+        "CÓDIGO-FONTE INTEGRAL DO PROJETO:\n"
+        f"{combined_code}\n\n"
+        "Por favor, seja extremamente objetivo e foque em problemas estruturais e bad smells globais."
+    )
+    
+    user_message = "/deep-review"
+    
+    return user_message, system_prompt
