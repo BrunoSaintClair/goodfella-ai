@@ -42,6 +42,12 @@ def handle_setup() -> None:
     
     config["provider"] = provider
     
+    current_model = config["models"].get(provider, "")
+    console.print(f"[info]Atenção: O nome do modelo deve ser escrito EXATAMENTE como exigido pelo {provider}.[/info]")
+    model = Prompt.ask(f"Digite o modelo para {provider}", default=current_model)
+    if model.strip():
+        config["models"][provider] = model.strip()
+    
     if provider != "ollama":
         current_key = config["api_keys"].get(provider, "")
         prompt_msg = f"Digite a API Key para {provider}"
@@ -61,10 +67,12 @@ def handle_status() -> None:
     """
     config = load_config()
     provider = config.get("provider", "ollama").lower()
+    model = config["models"].get(provider, "N/A")
     has_key = bool(config["api_keys"].get(provider, ""))
     
     console.print("\n[bold magenta]=== Status do Goodfella ===[/bold magenta]")
     console.print(f"[info]Provedor Ativo:[/info] {provider}")
+    console.print(f"[info]Modelo Ativo:[/info] {model}")
     
     if provider != "ollama":
         key_status = "[success]Configurada[/success]" if has_key else "[danger]Não Configurada[/danger]"

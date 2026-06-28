@@ -52,7 +52,7 @@ DEFAULT_CHUNK_SIZE = 1500
 DEFAULT_CHUNK_OVERLAP = 200
 
 # === Modelos ===
-DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b"
+DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:1.5b"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 
 # === Prefixos de Comando ===

@@ -11,7 +11,7 @@ CONFIG_FILE_NAME = ".goodfella_config"
 DEFAULT_CONFIG = {
     "provider": "Ollama",
     "models": {
-        "ollama": "qwen2.5-coder:7b",
+        "ollama": "qwen2.5-coder:1.5b",
         "openai": "gpt-4o",
         "gemini": "gemini-1.5-pro",
         "anthropic": "claude-3-5-sonnet-20240620",

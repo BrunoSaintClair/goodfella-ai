@@ -30,6 +30,7 @@ from goodfella.cli.commands import handle_setup, handle_status, handle_refresh, 
 
 def print_welcome():
     console.print("\n[bold magenta]🎩 Goodfella AI Pair Programmer[/bold magenta]")
+    console.print("[warning]⚠️  Lembre-se de manter seu servidor LLM rodando (ex: 'ollama serve'), senão a aplicação não funcionará![/warning]")
     console.print("[info]Digite /help para ver a lista de comandos disponíveis.[/info]\n")
 
 def main() -> None:
