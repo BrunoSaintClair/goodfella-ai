@@ -1,6 +1,6 @@
 [project]
 name = "goodfella"
-version = "0.1.1"
+version = "0.1.2"
 description = "Strict Pair Programmer CLI — AI-powered software architecture reviewer"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,9 +36,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/BrunoSaintClair/goodfella"
-Repository = "https://github.com/BrunoSaintClair/goodfella.git"
-"Bug Tracker" = "https://github.com/BrunoSaintClair/goodfella/issues"
+Homepage = "https://github.com/BrunoSaintClair/goodfella-ai"
+Repository = "https://github.com/BrunoSaintClair/goodfella-ai.git"
+"Bug Tracker" = "https://github.com/BrunoSaintClair/goodfella-ai/issues"
 
 [project.scripts]
 goodfella = "goodfella.cli.app:main"
