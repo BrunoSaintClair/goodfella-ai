@@ -1,6 +1,6 @@
 [project]
 name = "goodfella"
-version = "0.1.0"
+version = "0.1.1"
 description = "Strict Pair Programmer CLI — AI-powered software architecture reviewer"
 readme = "README.md"
 requires-python = ">=3.11"
