@@ -10,6 +10,7 @@ no pyproject.toml, permitindo invocar o Goodfella diretamente via terminal:
 
 
 import sys
+import time
 import logging
 import warnings
 
@@ -25,7 +26,7 @@ from goodfella.rag.chunker import run_indexing_pipeline
 from goodfella.knowledge.rules import sync_rules
 from goodfella.llm.factory import get_llm
 from goodfella.llm.memory import load_history, save_message, clear_history
-from goodfella.cli.ui import console, show_spinner
+from goodfella.cli.ui import console, show_spinner, show_timer_spinner
 from goodfella.cli.commands import handle_setup, handle_status, handle_refresh, handle_rebuild, handle_help, handle_review, handle_deep_review, handle_rule_add
 
 def print_welcome():
@@ -94,13 +95,17 @@ def main() -> None:
             # Prepara a janela de contexto
             history = load_history()
             
+            is_review_cmd = False
+            
             if cmd.startswith("/review"):
+                is_review_cmd = True
                 user_msg, sys_prompt = handle_review(cmd)
                 if not user_msg:
                     continue
                 user_input = user_msg
                 system_prompt = sys_prompt
             elif cmd.startswith("/deep-review"):
+                is_review_cmd = True
                 user_msg, sys_prompt = handle_deep_review(cmd)
                 if not user_msg:
                     continue
@@ -120,9 +125,34 @@ def main() -> None:
             full_response = ""
             
             try:
-                for chunk in llm.stream(messages):
-                    print(chunk.content, end="", flush=True)
-                    full_response += chunk.content
+                start_time = time.time()
+                stream_iter = llm.stream(messages)
+                
+                try:
+                    if is_review_cmd:
+                        with show_timer_spinner("Avaliando arquitetura e escrevendo Code Review..."):
+                            first_chunk = next(stream_iter)
+                    else:
+                        with show_spinner("Pensando..."):
+                            first_chunk = next(stream_iter)
+                    
+                    ttft_end = time.time()
+                    print(first_chunk.content, end="", flush=True)
+                    full_response += first_chunk.content
+                    chunk_count = 1
+                    
+                    for chunk in stream_iter:
+                        print(chunk.content, end="", flush=True)
+                        full_response += chunk.content
+                        chunk_count += 1
+                        
+                    total_time = time.time() - start_time
+                    gen_time = time.time() - ttft_end
+                    tps = chunk_count / gen_time if gen_time > 0 else 0
+                    
+                    console.print(f"\n\n[info]✓ Concluído em {total_time:.1f}s (Preparo: {ttft_end - start_time:.1f}s) | ~{chunk_count} tokens | Vel: {tps:.1f} t/s[/info]")
+                except StopIteration:
+                    pass
             except Exception as e:
                 error_msg = str(e)
                 if "Connection refused" in error_msg or "Errno 111" in error_msg:

@@ -10,7 +10,8 @@ from typing import Tuple, Optional
 
 from goodfella.rag.scanner import scan_workspace
 
-from goodfella.cli.ui import console, show_spinner
+import time
+from goodfella.cli.ui import console, show_spinner, show_timer_spinner
 from goodfella.core.config import load_config, save_config, DEFAULT_CONFIG
 from goodfella.core.env import init_environment
 from goodfella.rag.db import get_client, get_collection, get_db_path
@@ -203,11 +204,15 @@ def handle_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
     query_text = combined_code[:1000]
     
     try:
-        results = col.query(
-            query_texts=[query_text],
-            n_results=5,
-            where={"is_rule": True}
-        )
+        with show_timer_spinner("Buscando regras no Banco Vetorial...") as renderable:
+            results = col.query(
+                query_texts=[query_text],
+                n_results=5,
+                where={"is_rule": True}
+            )
+            elapsed = time.time() - renderable.start_time
+        console.print(f"[info]Busca concluída em {elapsed:.1f}s[/info]")
+        
         if results and results.get("documents") and len(results["documents"]) > 0:
             rules_context = "\n\n".join(results["documents"][0])
         else:
