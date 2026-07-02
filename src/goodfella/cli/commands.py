@@ -105,10 +105,13 @@ def handle_rebuild() -> None:
     console.print("Ele será reconstruído do zero, o que pode levar algum tempo.\n")
     
     if Confirm.ask("Deseja realmente prosseguir?"):
-        db_path = get_db_path()
         try:
-            if db_path.exists():
-                shutil.rmtree(db_path, ignore_errors=True)
+            client = get_client()
+            try:
+                client.delete_collection("goodfella_codebase")
+            except Exception:
+                pass
+            
             console.print("[info]Banco apagado. Reconstruindo...[/info]")
             
             # Recria o diretório se necessário e roda a pipeline
