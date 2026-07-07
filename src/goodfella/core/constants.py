@@ -48,8 +48,8 @@ SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({
 })
 
 # === Chunking ===
-DEFAULT_CHUNK_SIZE = 1500
-DEFAULT_CHUNK_OVERLAP = 200
+DEFAULT_CHUNK_SIZE = 1000
+DEFAULT_CHUNK_OVERLAP = 150
 
 # === Modelos ===
 DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:1.5b"

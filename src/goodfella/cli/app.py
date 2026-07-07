@@ -23,6 +23,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from goodfella.core.env import init_environment
 from goodfella.rag.chunker import run_indexing_pipeline
+from goodfella.rag.db import get_client, get_collection
 from goodfella.knowledge.rules import sync_rules
 from goodfella.llm.factory import get_llm
 from goodfella.llm.memory import load_history, save_message, clear_history
@@ -131,10 +132,31 @@ def main() -> None:
                 user_input = user_msg
                 system_prompt = sys_prompt
             else:
-                system_prompt = (
-                    "Você é o Goodfella, um AI Pair Programmer local-first ultra focado em "
-                    "engenharia de software pragmática. Responda sempre em português, de forma direta."
-                )
+                # Busca contexto relevante do projeto via RAG para enriquecer o chat
+                rag_context = ""
+                try:
+                    client = get_client()
+                    col = get_collection(client)
+                    rag_results = col.query(query_texts=[user_input], n_results=3)
+                    if rag_results and rag_results.get("documents") and rag_results["documents"][0]:
+                        rag_context = "\n\n".join(rag_results["documents"][0])
+                except Exception:
+                    pass
+                
+                if rag_context:
+                    system_prompt = (
+                        "Você é o Goodfella, um AI Pair Programmer local-first.\n"
+                        "Responda em português, de forma direta.\n\n"
+                        "CONTEXTO DO PROJETO (fragmentos relevantes recuperados via RAG):\n"
+                        f"{rag_context}\n\n"
+                        "Use o contexto acima para embasar suas respostas quando relevante. "
+                        "Se o contexto não for relevante para a pergunta, ignore-o."
+                    )
+                else:
+                    system_prompt = (
+                        "Você é o Goodfella, um AI Pair Programmer local-first.\n"
+                        "Responda em português, de forma direta."
+                    )
             
             messages = [SystemMessage(content=system_prompt)]
             messages.extend(history)

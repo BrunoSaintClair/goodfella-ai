@@ -31,3 +31,25 @@ def show_spinner(message: str) -> Generator[None, None, None]:
     """
     with console.status(f"[bold cyan]{message}[/bold cyan]", spinner="dots"):
         yield
+
+class _TimerRenderable:
+    """Objeto auxiliar que armazena o start_time para uso externo."""
+    def __init__(self):
+        self.start_time = 0.0
+
+@contextmanager
+def show_timer_spinner(message: str) -> Generator[_TimerRenderable, None, None]:
+    """
+    Context manager que exibe um spinner animado e expõe o timestamp de início
+    para cálculo de tempo decorrido pelo código chamador.
+    
+    Exemplo de uso:
+        with show_timer_spinner("Buscando regras...") as renderable:
+            do_heavy_work()
+            elapsed = time.time() - renderable.start_time
+    """
+    import time
+    renderable = _TimerRenderable()
+    renderable.start_time = time.time()
+    with console.status(f"[bold cyan]{message}[/bold cyan]", spinner="dots"):
+        yield renderable

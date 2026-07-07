@@ -10,6 +10,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 from goodfella.core.env import GOODFELLA_DIR
 
+MAX_HISTORY_MESSAGES = 20
+
 def get_history_path(workspace_dir: Path = None) -> Path:
     if workspace_dir is None:
         workspace_dir = Path.cwd()
@@ -36,6 +38,9 @@ def load_history(workspace_dir: Path = None) -> List[BaseMessage]:
                 messages.append(AIMessage(content=msg.get("content", "")))
     except (json.JSONDecodeError, IOError):
         pass
+    
+    if len(messages) > MAX_HISTORY_MESSAGES:
+        messages = messages[-MAX_HISTORY_MESSAGES:]
         
     return messages
 
