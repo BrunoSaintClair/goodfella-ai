@@ -47,8 +47,14 @@ def main() -> None:
         with show_spinner("Sincronizando base de código e regras..."):
             sync_rules()
             run_indexing_pipeline()
-            # 2. Inicialização da Instância LangChain
+            
+        # 2. Inicialização da Instância LangChain
+        llm = None
+        try:
             llm = get_llm()
+        except ValueError as e:
+            console.print(f"\n[warning]Aviso de Configuração: {e}[/warning]")
+            console.print("[info]Use o comando /setup para configurar seu provedor antes de interagir.[/info]")
         
         print_welcome()
         
@@ -75,6 +81,11 @@ def main() -> None:
                 continue
             elif cmd == "/setup":
                 handle_setup()
+                try:
+                    llm = get_llm()
+                    console.print("[success]Provedor LLM atualizado com sucesso.[/success]\n")
+                except ValueError as e:
+                    console.print(f"[warning]Aviso: {e}[/warning]\n")
                 continue
             elif cmd == "/status":
                 handle_status()
@@ -92,6 +103,14 @@ def main() -> None:
                 handle_rule_add()
                 continue
                 
+            if not llm:
+                try:
+                    llm = get_llm()
+                except ValueError as e:
+                    console.print(f"\n[danger]Configuração Incompleta: {e}[/danger]")
+                    console.print("[info]Dica: Use o comando /setup para configurar seu provedor.[/info]\n")
+                    continue
+            
             # Prepara a janela de contexto
             history = load_history()
             
@@ -155,12 +174,34 @@ def main() -> None:
                     pass
             except Exception as e:
                 error_msg = str(e)
-                if "Connection refused" in error_msg or "Errno 111" in error_msg:
-                    console.print("\n[danger]Erro: Não foi possível conectar ao Ollama (Connection refused).[/danger]")
-                    console.print("[info]Dica: Verifique se o Ollama está rodando no seu terminal com 'ollama serve'.[/info]")
-                    console.print("[info]Se deseja usar OpenAI ou Gemini, configure-os usando o comando /setup.[/info]")
+                error_msg_lower = error_msg.lower()
+                
+                # Falhas de conexão (geralmente Ollama)
+                if "connection refused" in error_msg_lower or "errno 111" in error_msg_lower or "connecterror" in error_msg_lower:
+                    console.print("\n[danger]Erro de Conexão: Não foi possível alcançar o provedor local (Ollama).[/danger]")
+                    console.print("[info]Dica: Verifique se o servidor Ollama está rodando ('ollama serve').[/info]")
+                    console.print("[info]Se deseja usar provedores em nuvem (OpenAI, Gemini), mude no comando /setup.[/info]")
+                
+                # Erros de Autenticação / Chave Inválida
+                elif "authenticationerror" in error_msg_lower or "401" in error_msg_lower or "unauthorized" in error_msg_lower:
+                    console.print("\n[danger]Erro de Autenticação: A chave de API fornecida é inválida ou expirou.[/danger]")
+                    console.print("[info]Dica: Rode /setup para inserir uma chave de API válida para o provedor selecionado.[/info]")
+                
+                # Erros de Limite de Cota (Rate Limit)
+                elif "ratelimiterror" in error_msg_lower or "429" in error_msg_lower or "quota" in error_msg_lower:
+                    console.print("\n[danger]Erro de Cota (Rate Limit): O limite de requisições ou cota do provedor foi excedido.[/danger]")
+                    console.print("[info]Dica: Verifique seu saldo na plataforma do provedor ou aguarde alguns instantes antes de tentar novamente.[/info]")
+                
+                # Erro de Modelo Inexistente
+                elif "notfounderror" in error_msg_lower or "404" in error_msg_lower or "not found" in error_msg_lower:
+                    console.print("\n[danger]Erro de Modelo: O modelo especificado não foi encontrado no provedor.[/danger]")
+                    console.print("[info]Dica: Se estiver usando Ollama, certifique-se de ter feito o pull do modelo (ex: 'ollama pull qwen2.5-coder:1.5b').[/info]")
+                    console.print("[info]Ou edite manualmente o arquivo ~/.goodfella_config para ajustar o nome do modelo.[/info]")
+                
+                # Fallback para erros genéricos
                 else:
-                    console.print(f"\n[danger]Erro de LLM: {error_msg}[/danger]")
+                    console.print(f"\n[danger]Erro inesperado do LLM: {error_msg}[/danger]")
+                    console.print("[info]Dica: Verifique se sua conexão de internet está ativa e se os parâmetros estão corretos.[/info]")
                 continue
             print("\n")
             
