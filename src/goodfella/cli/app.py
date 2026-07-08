@@ -22,6 +22,7 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from goodfella.core.env import init_environment
+from goodfella.core.config import load_config
 from goodfella.rag.chunker import run_indexing_pipeline
 from goodfella.rag.db import get_client, get_collection
 from goodfella.knowledge.rules import sync_rules
@@ -31,8 +32,17 @@ from goodfella.cli.ui import console, show_spinner, show_timer_spinner
 from goodfella.cli.commands import handle_setup, handle_status, handle_refresh, handle_rebuild, handle_help, handle_review, handle_deep_review, handle_rule_add
 
 def print_welcome():
+    config = load_config()
+    provider = config.get("provider", "Ollama").lower()
+    
     console.print("\n[bold magenta]🎩 Goodfella AI Pair Programmer[/bold magenta]")
-    console.print("[warning]⚠️  Lembre-se de manter seu servidor LLM rodando (ex: 'ollama serve'), senão a aplicação não funcionará![/warning]")
+    
+    if provider == "ollama":
+        console.print("[warning]⚠️  Lembre-se de manter seu servidor LLM rodando (ex: 'ollama serve'), senão a aplicação não funcionará![/warning]")
+        console.print("[success]💡 Dica: Se o seu computador possui placa de vídeo (GPU) dedicada, instale a versão com suporte a GPU do Ollama. Os modelos locais rodarão mais rápido![/success]")
+    else:
+        console.print(f"[info]Provedor de Nuvem Ativo: {provider.capitalize()}[/info]")
+        
     console.print("[info]Digite /help para ver a lista de comandos disponíveis.[/info]\n")
 
 def main() -> None:
