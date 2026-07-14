@@ -201,22 +201,40 @@ def handle_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
     client = get_client()
     col = get_collection(client)
     
-    query_text = combined_code[:500]
+    chunk_size = 1000
+    max_queries = 5
+    queries = []
     
+    for i in range(0, min(len(combined_code), chunk_size * max_queries), chunk_size):
+        queries.append(combined_code[i:i+chunk_size])
+    
+    if not queries:
+        queries = [""]
+        
     try:
         with show_timer_spinner("Buscando regras no Banco Vetorial...") as renderable:
             results = col.query(
-                query_texts=[query_text],
-                n_results=8,
+                query_texts=queries,
+                n_results=3,
                 where={"is_rule": True}
             )
             elapsed = time.time() - renderable.start_time
-        console.print(f"[info]Busca concluída em {elapsed:.1f}s[/info]")
+        console.print(f"[info]Busca concluída em {elapsed:.1f}s usando {len(queries)} blocos semânticos[/info]")
         
-        if results and results.get("documents") and len(results["documents"]) > 0:
-            rules_context = "\n\n".join(results["documents"][0])
-        else:
-            rules_context = ""
+        unique_rule_files = {}
+        if results and results.get("metadatas"):
+            for meta_list in results["metadatas"]:
+                if meta_list:
+                    for meta in meta_list:
+                        fp = meta.get("file_path", "")
+                        if fp and fp not in unique_rule_files:
+                            try:
+                                content = Path(fp).read_text(encoding="utf-8")
+                                unique_rule_files[fp] = content
+                            except Exception:
+                                pass
+
+        rules_context = "\n\n".join(unique_rule_files.values())
     except Exception as e:
         console.print(f"[warning]Aviso: Falha ao buscar regras no RAG: {e}[/warning]")
         rules_context = ""
@@ -226,7 +244,7 @@ def handle_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
         "TAREFA: Analise o código abaixo e produza um Code Review seguindo EXATAMENTE o formato de saída.\n\n"
         "CÓDIGO-FONTE A SER REVISADO:\n"
         f"{combined_code}\n\n"
-        "REGRAS ARQUITETURAIS (use como critério de avaliação):\n"
+        "REGRAS ARQUITETURAIS (use EXCLUSIVAMENTE como critério de avaliação):\n"
         f"{rules_context}\n\n"
         "FORMATO DE SAÍDA OBRIGATÓRIO:\n"
         "## Resumo Geral\n"
@@ -235,16 +253,17 @@ def handle_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
         "Para cada problema:\n"
         "### [SEVERIDADE: CRÍTICO|ALTO|MÉDIO|BAIXO] Nome do Problema\n"
         "- **Arquivo:** nome_do_arquivo\n"
-        "- **Linha(s):** número(s) aproximado(s)\n"
-        "- **Princípio Violado:** (SOLID/Clean Architecture/DDD/etc)\n"
+        "- **Regra Violada:** (Cite qual das regras do contexto acima foi violada)\n"
         "- **Problema:** Descrição direta do que está errado\n"
-        "- **Correção:** Snippet de código ou instrução clara de como corrigir\n\n"
+        "- **Correção:** Snippet de código exato ou instrução clara\n\n"
         "## Pontos Positivos\n"
         "Liste 1-2 boas práticas que o código já segue.\n\n"
-        "REGRAS DE CONDUTA:\n"
-        "- Seja DIRETO. Sem introduções, sem desculpas, sem 'considere talvez'.\n"
-        "- Se não encontrar problemas reais, diga 'Nenhum problema estrutural encontrado' e pare.\n"
-        "- Foque APENAS em problemas arquiteturais e estruturais, não em estilo/formatação.\n"
+        "REGRAS DE CONDUTA OBRIGATÓRIAS:\n"
+        "1. PROIBIÇÃO DE ALUCINAÇÃO: Só aponte erros e cite linhas de código que EXISTAM exatamente no arquivo fornecido. Não invente ou adivinhe nada.\n"
+        "2. PROIBIÇÃO DE REPETIÇÃO: Agrupe os problemas. Nunca repita a mesma violação para o mesmo trecho de código.\n"
+        "3. TOLERÂNCIA ZERO PARA FALSO-POSITIVOS: Se o código não violar estritamente uma regra arquitetural fornecida acima, IGNORE. Não invente problemas de estilo ou formatação.\n"
+        "- Seja DIRETO. Sem introduções, sem desculpas.\n"
+        "- Se não encontrar problemas reais de arquitetura, diga 'Nenhum problema estrutural encontrado' e pare.\n"
         "- Responda em português."
     )
     
