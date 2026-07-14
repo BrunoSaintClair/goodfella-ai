@@ -2,11 +2,12 @@
 Módulo responsável pelos comandos utilitários da CLI.
 """
 
+import re
 import shutil
 import questionary
 from rich.prompt import Prompt, Confirm
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict
 
 from goodfella.rag.scanner import scan_workspace
 
@@ -14,9 +15,144 @@ import time
 from goodfella.cli.ui import console, show_spinner, show_timer_spinner
 from goodfella.core.config import load_config, save_config, DEFAULT_CONFIG
 from goodfella.core.env import init_environment
-from goodfella.rag.db import get_client, get_collection, get_db_path
+from goodfella.rag.db import get_client, get_collection
 from goodfella.rag.chunker import run_indexing_pipeline
 from goodfella.knowledge.rules import sync_rules, get_rules_directories
+
+def extract_code_signals(code: str) -> str:
+    """
+    Extrai sinais semânticos do código-fonte via regex para gerar
+    queries mais relevantes na busca de regras no RAG.
+    
+    Captura: nomes de classes, funções, imports e docstrings.
+    Retorna uma string descritiva para usar como query semântica.
+    """
+    signals = []
+    
+    # Classes
+    classes = re.findall(r'^class\s+(\w+)', code, re.MULTILINE)
+    if classes:
+        signals.append(f"classes: {', '.join(classes)}")
+        if len(classes) == 1:
+            # Conta métodos da classe para detectar god class
+            methods = re.findall(r'^    def\s+(\w+)', code, re.MULTILINE)
+            if len(methods) > 10:
+                signals.append(f"classe com {len(methods)} métodos (possível god class)")
+    
+    # Funções top-level
+    functions = re.findall(r'^def\s+(\w+)', code, re.MULTILINE)
+    if functions:
+        signals.append(f"funções: {', '.join(functions[:10])}")
+    
+    # Imports (indica dependências e acoplamento)
+    imports = re.findall(r'^(?:from\s+\S+\s+)?import\s+(.+)$', code, re.MULTILINE)
+    if len(imports) > 8:
+        signals.append(f"{len(imports)} imports (alto acoplamento)")
+    
+    if not signals:
+        # Fallback: primeiras linhas significativas do código
+        lines = [l.strip() for l in code.split('\n') if l.strip() and not l.strip().startswith('#')]
+        signals.append(' '.join(lines[:5]))
+    
+    return ' | '.join(signals)
+
+
+def add_line_numbers(content: str) -> str:
+    """
+    Adiciona numeração de linhas ao código-fonte.
+    Ex: '1: def foo():'
+    
+    Permite que o LLM cite linhas específicas no review.
+    """
+    lines = content.split('\n')
+    numbered = [f"{i+1}: {line}" for i, line in enumerate(lines)]
+    return '\n'.join(numbered)
+
+
+def format_rules_context(rule_files: Dict[str, str]) -> str:
+    """
+    Formata as regras recuperadas do RAG com labels identificáveis.
+    
+    Converte o file_path em um label legível:
+      /path/to/solid.md → SOLID
+      /path/to/god_class.md → GOD CLASS
+    
+    Cada regra é envolvida em delimitadores claros para o LLM referenciar.
+    """
+    if not rule_files:
+        return "Nenhuma regra disponível."
+    
+    formatted_parts = []
+    for file_path, content in rule_files.items():
+        # Deriva o label do nome do arquivo
+        filename = Path(file_path).stem  # 'solid', 'god_class', etc.
+        label = filename.replace('_', ' ').upper()  # 'SOLID', 'GOD CLASS'
+        
+        formatted_parts.append(
+            f"=== REGRA: {label} ===\n"
+            f"{content.strip()}\n"
+            f"=== FIM REGRA: {label} ==="
+        )
+    
+    return '\n\n'.join(formatted_parts)
+
+
+def build_review_prompt(
+    code_blocks: List[str],
+    rules_context: str,
+    file_names: List[str],
+    is_deep: bool = False
+) -> str:
+    """
+    Monta o system prompt para /review ou /deep-review.
+    
+    Compartilha a mesma estrutura de saída entre ambos os comandos,
+    variando apenas as restrições de escopo.
+    """
+    combined_code = '\n\n'.join(code_blocks)
+    files_list = ', '.join(f'`{f}`' for f in file_names)
+    
+    # Restrição de escopo: /review é estrito, /deep-review permite cross-file
+    if is_deep:
+        scope_rule = (
+            "Você tem acesso ao código-fonte INTEGRAL do projeto. "
+            "Analise relações entre módulos e problemas cross-file."
+        )
+    else:
+        scope_rule = (
+            f"ATENÇÃO: Analise EXCLUSIVAMENTE os arquivos listados: {files_list}. "
+            "NÃO mencione, cite ou invente nomes de arquivos que não estejam nessa lista. "
+            "Se precisar referenciar algo externo, diga apenas 'dependência externa'."
+        )
+    
+    system_prompt = (
+        "Você é o Goodfella, um Arquiteto de Software rigoroso.\n\n"
+        f"{scope_rule}\n\n"
+        "REGRAS DE CONDUTA OBRIGATÓRIAS (LEIA ATENTAMENTE):\n"
+        "1. ZERO ALUCINAÇÃO: Cite apenas classes, funções e linhas que existem exatamente no código enviado.\n"
+        "2. AGRUPE PROBLEMAS: Nunca repita o mesmo problema. Se ocorrer em várias linhas, cite o intervalo (ex: L10-L15).\n"
+        "3. USO vs DEFINIÇÃO: Apenas usar/importar uma classe não significa que ela foi definida sem implementação.\n"
+        "4. NÃO DESOBEDEÇA O FORMATO: Você não tem permissão para criar seções como 'Recomendações' ou 'Exemplo'.\n"
+        "5. NÃO REPITA INSTRUÇÕES: O seu output deve conter apenas a análise, não repita estas regras.\n\n"
+        "REGRAS ARQUITETURAIS DO PROJETO:\n"
+        f"{rules_context}\n\n"
+        "CÓDIGO-FONTE PARA ANÁLISE:\n"
+        f"{combined_code}\n\n"
+        "Você DEVE responder ESTRITAMENTE no formato Markdown abaixo, preenchendo os campos entre < > com a sua análise:\n\n"
+        "## Veredito\n"
+        "<Sua frase de veredito aqui>\n\n"
+        "## Problemas\n"
+        "<Se não houver problemas, escreva apenas: Nenhum problema estrutural encontrado e vá para os Pontos Positivos>\n\n"
+        "### <NÍVEL DE GRAVIDADE> <Nome do Problema>\n"
+        "- **Arquivo:** <nome_do_arquivo>:L<linha>\n"
+        "- **Regra Violada:** <Nome da regra>\n"
+        "- **Problema:** <Descrição do problema>\n"
+        "- **Correção:** <Sugestão de correção>\n\n"
+        "## Pontos Positivos\n"
+        "<Liste as boas práticas encontradas aqui>"
+    )
+    
+    return system_prompt
 
 def handle_setup() -> None:
     """
@@ -155,8 +291,8 @@ def handle_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
     Inicia o fluxo do comando /review.
     - Se chamado sem argumentos, exibe menu interativo para escolha de arquivos.
     - Se chamado com argumentos, pega os caminhos passados.
-    Lê os arquivos, busca regras no RAG usando fragmentos do código e injeta 
-    isso no System Prompt retornado, junto com uma breve mensagem de usuário.
+    Lê os arquivos, extrai sinais semânticos para queries RAG, busca regras
+    relevantes, e monta o prompt de review com código numerado.
     """
     parts = cmd.split(maxsplit=1)
     files_to_review = []
@@ -181,46 +317,49 @@ def handle_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
         raw_files = parts[1].replace(",", " ").split()
         files_to_review = raw_files
         
-    code_contents = []
+    # Lê e numera os arquivos selecionados
+    code_blocks = []
+    raw_contents = {}
     for f in files_to_review:
         f_path = Path.cwd() / f
         if f_path.exists() and f_path.is_file():
             try:
                 content = f_path.read_text(encoding="utf-8")
-                code_contents.append(f"--- Arquivo: {f} ---\n{content}")
+                raw_contents[f] = content
+                numbered = add_line_numbers(content)
+                code_blocks.append(f"--- Arquivo: {f} ---\n{numbered}")
             except Exception:
                 console.print(f"[warning]Erro ao ler {f}[/warning]")
         else:
             console.print(f"[warning]Arquivo {f} não encontrado.[/warning]")
             
-    if not code_contents:
+    if not code_blocks:
         return None, None
-        
-    combined_code = "\n\n".join(code_contents)
     
+    # Busca regras relevantes no RAG usando sinais semânticos do código
     client = get_client()
     col = get_collection(client)
     
-    chunk_size = 1000
-    max_queries = 5
+    # Gera 1 query semântica por arquivo (nomes de classes, funções, imports)
     queries = []
-    
-    for i in range(0, min(len(combined_code), chunk_size * max_queries), chunk_size):
-        queries.append(combined_code[i:i+chunk_size])
+    for filename, content in raw_contents.items():
+        signal = extract_code_signals(content)
+        queries.append(f"{filename}: {signal}")
     
     if not queries:
-        queries = [""]
+        queries = ["regras arquiteturais boas práticas"]
         
     try:
         with show_timer_spinner("Buscando regras no Banco Vetorial...") as renderable:
             results = col.query(
                 query_texts=queries,
-                n_results=3,
+                n_results=5,
                 where={"is_rule": True}
             )
             elapsed = time.time() - renderable.start_time
-        console.print(f"[info]Busca concluída em {elapsed:.1f}s usando {len(queries)} blocos semânticos[/info]")
+        console.print(f"[info]Busca concluída em {elapsed:.1f}s usando {len(queries)} queries semânticas[/info]")
         
+        # Deduplicação por file_path — evita trazer chunks do mesmo arquivo de regra
         unique_rule_files = {}
         if results and results.get("metadatas"):
             for meta_list in results["metadatas"]:
@@ -234,37 +373,17 @@ def handle_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
                             except Exception:
                                 pass
 
-        rules_context = "\n\n".join(unique_rule_files.values())
+        rules_context = format_rules_context(unique_rule_files)
     except Exception as e:
         console.print(f"[warning]Aviso: Falha ao buscar regras no RAG: {e}[/warning]")
-        rules_context = ""
-        
-    system_prompt = (
-        "Você é o Goodfella, um Pair Programmer rigoroso e objetivo.\n\n"
-        "TAREFA: Analise o código abaixo e produza um Code Review seguindo EXATAMENTE o formato de saída.\n\n"
-        "CÓDIGO-FONTE A SER REVISADO:\n"
-        f"{combined_code}\n\n"
-        "REGRAS ARQUITETURAIS (use EXCLUSIVAMENTE como critério de avaliação):\n"
-        f"{rules_context}\n\n"
-        "FORMATO DE SAÍDA OBRIGATÓRIO:\n"
-        "## Resumo Geral\n"
-        "Uma frase sobre a saúde geral do código.\n\n"
-        "## Problemas Encontrados\n"
-        "Para cada problema:\n"
-        "### [SEVERIDADE: CRÍTICO|ALTO|MÉDIO|BAIXO] Nome do Problema\n"
-        "- **Arquivo:** nome_do_arquivo\n"
-        "- **Regra Violada:** (Cite qual das regras do contexto acima foi violada)\n"
-        "- **Problema:** Descrição direta do que está errado\n"
-        "- **Correção:** Snippet de código exato ou instrução clara\n\n"
-        "## Pontos Positivos\n"
-        "Liste 1-2 boas práticas que o código já segue.\n\n"
-        "REGRAS DE CONDUTA OBRIGATÓRIAS:\n"
-        "1. PROIBIÇÃO DE ALUCINAÇÃO: Só aponte erros e cite linhas de código que EXISTAM exatamente no arquivo fornecido. Não invente ou adivinhe nada.\n"
-        "2. PROIBIÇÃO DE REPETIÇÃO: Agrupe os problemas. Nunca repita a mesma violação para o mesmo trecho de código.\n"
-        "3. TOLERÂNCIA ZERO PARA FALSO-POSITIVOS: Se o código não violar estritamente uma regra arquitetural fornecida acima, IGNORE. Não invente problemas de estilo ou formatação.\n"
-        "- Seja DIRETO. Sem introduções, sem desculpas.\n"
-        "- Se não encontrar problemas reais de arquitetura, diga 'Nenhum problema estrutural encontrado' e pare.\n"
-        "- Responda em português."
+        rules_context = "Nenhuma regra disponível."
+    
+    # Monta o prompt usando a função compartilhada (modo estrito: só arquivos selecionados)
+    system_prompt = build_review_prompt(
+        code_blocks=code_blocks,
+        rules_context=rules_context,
+        file_names=files_to_review,
+        is_deep=False
     )
     
     user_message = f"/review {', '.join(files_to_review)}"
@@ -313,7 +432,7 @@ def handle_rule_add() -> None:
         
     rules_dirs = get_rules_directories()
     base_dir = rules_dirs[1] if scope == "local" else rules_dirs[0]
-    target_dir = base_dir / doc_type
+    target_dir = base_dir if doc_type == "rules" else base_dir / doc_type
     
     # 3. Método de entrada
     method = questionary.select(
@@ -437,8 +556,8 @@ def handle_deep_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Inicia o fluxo do comando /deep-review ("Curinga da Nuvem").
     Faz o bypass do ChromaDB e carrega fisicamente todo o repositório
-    mais os arquivos de regras (.md) em um único pacote gigantesco.
-    Alerta o usuário sobre custos e envia tudo no System Prompt.
+    mais os arquivos de regras (.md). Usa o prompt compartilhado com
+    modo cross-file habilitado.
     """
     console.print("\n[bold magenta]=== Iniciando Deep Review ===[/bold magenta]")
     console.print("[info]Fazendo varredura completa do repositório (bypass RAG)...[/info]")
@@ -449,20 +568,24 @@ def handle_deep_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
         console.print("[warning]Nenhum arquivo válido encontrado no projeto.[/warning]")
         return None, None
         
-    code_contents = []
+    code_blocks = []
+    file_names = []
     total_chars = 0
     
     for f_path in valid_files:
         try:
             content = f_path.read_text(encoding="utf-8")
             rel_path = str(f_path.relative_to(Path.cwd()))
-            formatted_content = f"--- Arquivo: {rel_path} ---\n{content}"
-            code_contents.append(formatted_content)
+            numbered = add_line_numbers(content)
+            formatted_content = f"--- Arquivo: {rel_path} ---\n{numbered}"
+            code_blocks.append(formatted_content)
+            file_names.append(rel_path)
             total_chars += len(formatted_content)
         except Exception:
             pass
             
-    rules_contents = []
+    # Carrega TODAS as regras (bypass RAG)
+    rule_files = {}
     rules_dirs = get_rules_directories()
     for r_dir in rules_dirs:
         if not r_dir.exists() or not r_dir.is_dir():
@@ -470,10 +593,12 @@ def handle_deep_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
         for md_file in r_dir.glob("**/*.md"):
             try:
                 content = md_file.read_text(encoding="utf-8")
-                rules_contents.append(f"--- Regra: {md_file.name} ---\n{content}")
+                rule_files[str(md_file.absolute())] = content
                 total_chars += len(content)
             except Exception:
                 pass
+    
+    rules_context = format_rules_context(rule_files)
                 
     total_files = len(valid_files)
     approx_tokens = total_chars // 4
@@ -486,37 +611,13 @@ def handle_deep_review(cmd: str) -> Tuple[Optional[str], Optional[str]]:
     if not Confirm.ask("Deseja realmente prosseguir e realizar o Deep Review?"):
         console.print("[info]Operação cancelada.[/info]\n")
         return None, None
-        
-    combined_code = "\n\n".join(code_contents)
-    combined_rules = "\n\n".join(rules_contents)
     
-    system_prompt = (
-        "Você é o Goodfella, um Arquiteto de Software Sênior conduzindo um Deep Review.\n\n"
-        "TAREFA: Você tem acesso ao código-fonte INTEGRAL do projeto e a todas as regras.\n"
-        "Produza uma análise sistêmica seguindo EXATAMENTE o formato abaixo.\n\n"
-        "REGRAS E BOAS PRÁTICAS DO PROJETO:\n"
-        f"{combined_rules}\n\n"
-        "CÓDIGO-FONTE INTEGRAL DO PROJETO:\n"
-        f"{combined_code}\n\n"
-        "FORMATO DE SAÍDA OBRIGATÓRIO:\n"
-        "## Diagnóstico Geral\n"
-        "2-3 frases sobre a saúde arquitetural geral do projeto.\n\n"
-        "## Problemas Sistêmicos\n"
-        "Para cada problema (ordene por severidade):\n"
-        "### [CRÍTICO|ALTO|MÉDIO] Nome do Problema\n"
-        "- **Arquivos Afetados:** lista dos arquivos envolvidos\n"
-        "- **Princípio Violado:** (SOLID/Clean Architecture/DDD/etc)\n"
-        "- **Análise:** Como esse problema afeta o sistema como um todo\n"
-        "- **Correção Proposta:** Passo a passo concreto de refatoração\n\n"
-        "## Acoplamento Entre Módulos\n"
-        "Identifique dependências problemáticas entre os módulos do projeto.\n\n"
-        "## Pontos Fortes\n"
-        "Liste 2-3 decisões arquiteturais positivas do projeto.\n\n"
-        "REGRAS DE CONDUTA:\n"
-        "- Seja DIRETO. Sem introduções, sem desculpas.\n"
-        "- Relacione problemas entre diferentes partes do sistema (análise cross-file).\n"
-        "- Foque em problemas ESTRUTURAIS, não em estilo ou formatação.\n"
-        "- Responda em português."
+    # Monta o prompt usando a função compartilhada (modo deep: cross-file habilitado)
+    system_prompt = build_review_prompt(
+        code_blocks=code_blocks,
+        rules_context=rules_context,
+        file_names=file_names,
+        is_deep=True
     )
     
     user_message = "/deep-review"
