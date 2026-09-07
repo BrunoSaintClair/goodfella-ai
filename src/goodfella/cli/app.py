@@ -19,6 +19,7 @@ warnings.filterwarnings("ignore")
 logging.getLogger("chromadb").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 
+from typing import Any
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from goodfella.core.env import init_environment
@@ -30,6 +31,20 @@ from goodfella.llm.factory import get_llm
 from goodfella.llm.memory import load_history, save_message, clear_history
 from goodfella.cli.ui import console, show_spinner, show_timer_spinner
 from goodfella.cli.commands import handle_setup, handle_status, handle_refresh, handle_rebuild, handle_help, handle_review, handle_deep_review, handle_rule_add
+
+def extract_chunk_text(content: Any) -> str:
+    """Extrai texto normalizado de um chunk do LLM, suportando strings e listas de blocos."""
+    if isinstance(content, str):
+        return content
+    elif isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(item.get("text", ""))
+        return "".join(parts)
+    return str(content) if content is not None else ""
 
 def print_welcome():
     config = load_config()
@@ -188,13 +203,15 @@ def main() -> None:
                             first_chunk = next(stream_iter)
                     
                     ttft_end = time.time()
-                    print(first_chunk.content, end="", flush=True)
-                    full_response += first_chunk.content
+                    first_text = extract_chunk_text(first_chunk.content)
+                    print(first_text, end="", flush=True)
+                    full_response += first_text
                     chunk_count = 1
                     
                     for chunk in stream_iter:
-                        print(chunk.content, end="", flush=True)
-                        full_response += chunk.content
+                        chunk_text = extract_chunk_text(chunk.content)
+                        print(chunk_text, end="", flush=True)
+                        full_response += chunk_text
                         chunk_count += 1
                         
                     total_time = time.time() - start_time

@@ -30,14 +30,14 @@ def get_llm() -> BaseChatModel:
         return ChatOpenAI(api_key=api_key, model=model_name, streaming=True)
         
     elif provider == "gemini":
-        from langchain_google_genai import ChatGoogleGenAI
+        from langchain_google_genai import ChatGoogleGenerativeAI
         api_key = api_keys.get("gemini")
         if not api_key:
             raise ValueError("Chave de API do Gemini não configurada. Edite o ~/.goodfella_config")
         model_name = models.get("gemini", "gemini-1.5-pro")
         if not model_name or not isinstance(model_name, str):
             raise ValueError("Modelo do Gemini inválido ou vazio. Verifique 'models' no ~/.goodfella_config")
-        return ChatGoogleGenAI(google_api_key=api_key, model=model_name, streaming=True)
+        return ChatGoogleGenerativeAI(google_api_key=api_key, model=model_name, streaming=True)
         
     elif provider == "anthropic":
         from langchain_anthropic import ChatAnthropic

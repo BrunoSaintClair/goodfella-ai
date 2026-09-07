@@ -142,14 +142,12 @@ def build_review_prompt(
         "## Veredito\n"
         "<Sua frase de veredito aqui>\n\n"
         "## Problemas\n"
-        "<Se não houver problemas, escreva apenas: Nenhum problema estrutural encontrado e vá para os Pontos Positivos>\n\n"
+        "<Se não houver problemas, escreva apenas: 'Nenhum problema estrutural encontrado'>\n\n"
         "### <NÍVEL DE GRAVIDADE> <Nome do Problema>\n"
         "- **Arquivo:** <nome_do_arquivo>:L<linha>\n"
         "- **Regra Violada:** <Nome da regra>\n"
         "- **Problema:** <Descrição do problema>\n"
         "- **Correção:** <Sugestão de correção>\n\n"
-        "## Pontos Positivos\n"
-        "<Liste as boas práticas encontradas aqui>"
     )
     
     return system_prompt
@@ -181,6 +179,7 @@ def handle_setup() -> None:
     
     current_model = config["models"].get(provider, "")
     console.print(f"[info]Atenção: O nome do modelo deve ser escrito EXATAMENTE como exigido pelo {provider}.[/info]")
+    console.print(f"[dim]💡 O valor entre parênteses é o modelo atual (pressione Enter para mantê-lo).[/dim]")
     model = Prompt.ask(f"Digite o modelo para {provider}", default=current_model)
     if model.strip():
         config["models"][provider] = model.strip()
@@ -191,7 +190,8 @@ def handle_setup() -> None:
         if current_key:
             prompt_msg += " (deixe em branco para manter a atual)"
             
-        key = Prompt.ask(prompt_msg, password=True, default="")
+        console.print("[dim]🔒 Por segurança, a chave digitada não será exibida no terminal.[/dim]")
+        key = Prompt.ask(prompt_msg, password=True, default="", show_default=False)
         if key.strip():
             config["api_keys"][provider] = key.strip()
     
