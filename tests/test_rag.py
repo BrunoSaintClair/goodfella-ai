@@ -110,7 +110,7 @@ class TestSyncAndJIT:
         col = get_collection(client)
         count_init = col.count()
 
-        time.sleep(0.05)
+        time.sleep(0.1)
         (tmp_path / "src" / "tax.py").write_text("def calculate_taxes(amount): return amount * 0.15")
 
         indexed = run_indexing_pipeline(tmp_path)

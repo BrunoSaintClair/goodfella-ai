@@ -14,7 +14,7 @@ from goodfella.rag.scanner import scan_workspace
 import time
 from goodfella.cli.ui import console, show_spinner, show_timer_spinner
 from goodfella.core.config import load_config, save_config, DEFAULT_CONFIG
-from goodfella.core.env import init_environment
+from goodfella.core.env import init_environment, GOODFELLA_DIR
 from goodfella.rag.db import get_client, get_collection
 from goodfella.rag.chunker import run_indexing_pipeline
 from goodfella.knowledge.rules import sync_rules, get_rules_directories
@@ -430,8 +430,9 @@ def handle_rule_add() -> None:
         console.print("[warning]Operação cancelada.[/warning]\n")
         return
         
-    rules_dirs = get_rules_directories()
-    base_dir = rules_dirs[1] if scope == "local" else rules_dirs[0]
+    global_rules_dir = Path.home() / ".goodfella_config" / "rules"
+    local_rules_dir = Path.cwd() / GOODFELLA_DIR / "rules"
+    base_dir = local_rules_dir if scope == "local" else global_rules_dir
     target_dir = base_dir if doc_type == "rules" else base_dir / doc_type
     
     # 3. Método de entrada
