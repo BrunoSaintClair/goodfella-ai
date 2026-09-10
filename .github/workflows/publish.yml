@@ -9,6 +9,7 @@ on:
 jobs:
   github-release:
     name: Generate GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
