@@ -14,10 +14,11 @@ import time
 import logging
 import warnings
 
-# Suprime warnings e logs de bibliotecas de terceiros (ChromaDB, Langchain, etc)
+# Suprime warnings e logs de bibliotecas de terceiros (ChromaDB, Langchain, Google GenAI, etc)
 warnings.filterwarnings("ignore")
 logging.getLogger("chromadb").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.ERROR)
+logging.getLogger("google_genai").setLevel(logging.ERROR)
 
 from typing import Any
 from langchain_core.messages import SystemMessage, HumanMessage

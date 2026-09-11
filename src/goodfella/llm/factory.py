@@ -30,6 +30,8 @@ def get_llm() -> BaseChatModel:
         return ChatOpenAI(api_key=api_key, model=model_name, streaming=True)
         
     elif provider == "gemini":
+        import logging
+        logging.getLogger("google_genai").setLevel(logging.ERROR)
         from langchain_google_genai import ChatGoogleGenerativeAI
         api_key = api_keys.get("gemini")
         if not api_key:
