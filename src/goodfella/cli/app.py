@@ -96,39 +96,43 @@ def main() -> None:
                 continue
                 
             cmd = user_input.strip().lower()
-            if cmd in ["/exit", "/quit"]:
-                break
-            elif cmd == "/clear":
-                console.clear()
-                print_welcome()
-                continue
-            elif cmd == "/reset":
-                clear_history()
-                console.print("[info]Histórico apagado.[/info]\n")
-                continue
-            elif cmd == "/setup":
-                handle_setup()
-                try:
-                    llm = get_llm()
-                    console.print("[success]Provedor LLM atualizado com sucesso.[/success]\n")
-                except ValueError as e:
-                    console.print(f"[warning]Aviso: {e}[/warning]\n")
-                continue
-            elif cmd == "/status":
-                handle_status()
-                continue
-            elif cmd == "/refresh":
-                handle_refresh()
-                continue
-            elif cmd == "/rebuild":
-                handle_rebuild()
-                continue
-            elif cmd == "/help":
-                handle_help()
-                continue
-            elif cmd.startswith("/rule add"):
-                handle_rule_add()
-                continue
+            if cmd.startswith("/"):
+                if cmd in ["/exit", "/quit"]:
+                    break
+                elif cmd == "/clear":
+                    console.clear()
+                    print_welcome()
+                    continue
+                elif cmd == "/reset":
+                    clear_history()
+                    console.print("[info]Histórico apagado.[/info]\n")
+                    continue
+                elif cmd == "/setup":
+                    handle_setup()
+                    try:
+                        llm = get_llm()
+                        console.print("[success]Provedor LLM atualizado com sucesso.[/success]\n")
+                    except ValueError as e:
+                        console.print(f"[warning]Aviso: {e}[/warning]\n")
+                    continue
+                elif cmd == "/status":
+                    handle_status()
+                    continue
+                elif cmd == "/refresh":
+                    handle_refresh()
+                    continue
+                elif cmd == "/rebuild":
+                    handle_rebuild()
+                    continue
+                elif cmd == "/help":
+                    handle_help()
+                    continue
+                elif cmd == "/rule add" or cmd.startswith("/rule add "):
+                    handle_rule_add()
+                    continue
+                elif not (cmd == "/review" or cmd.startswith("/review ") or cmd == "/deep-review" or cmd.startswith("/deep-review ")):
+                    console.print("[warning]Comando não reconhecido. Use /help para ver a lista de comandos possíveis.[/warning]\n")
+                    continue
                 
             if not llm:
                 try:
@@ -143,14 +147,14 @@ def main() -> None:
             
             is_review_cmd = False
             
-            if cmd.startswith("/review"):
+            if cmd == "/review" or cmd.startswith("/review "):
                 is_review_cmd = True
                 user_msg, sys_prompt = handle_review(cmd)
                 if not user_msg:
                     continue
                 user_input = user_msg
                 system_prompt = sys_prompt
-            elif cmd.startswith("/deep-review"):
+            elif cmd == "/deep-review" or cmd.startswith("/deep-review "):
                 is_review_cmd = True
                 user_msg, sys_prompt = handle_deep_review(cmd)
                 if not user_msg:

@@ -439,6 +439,31 @@ class TestSessionCommands:
         with patch.object(console, "input", side_effect=["  /QUIT  "]):
             main()
 
+    @patch("goodfella.cli.app.get_llm")
+    @patch("goodfella.cli.app.init_environment")
+    @patch("goodfella.cli.app.sync_rules")
+    @patch("goodfella.cli.app.run_indexing_pipeline")
+    def test_repl_warns_on_unknown_slash_command(
+        self, mock_pipe, mock_sync, mock_init, mock_get_llm, tmp_path: Path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        mock_llm = MagicMock()
+        mock_get_llm.return_value = mock_llm
+
+        inputs = ["/desconhecido", "/rule", "/", "/exit"]
+        with patch.object(console, "input", side_effect=inputs), patch.object(console, "print") as mock_print:
+            main()
+
+        printed_texts = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
+        full_output = " ".join(printed_texts)
+
+        assert "Comando não reconhecido" in full_output
+        assert "/help" in full_output
+        assert "comandos possíveis" in full_output
+
+        # O LLM nunca deve ser acionado para comandos desconhecidos
+        mock_llm.stream.assert_not_called()
+
 
 class TestFreeChatDynamicRAG:
     """Validação de conversação livre com enriquecimento dinâmico de RAG (Teste 6.1)."""
