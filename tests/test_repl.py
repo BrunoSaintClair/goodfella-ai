@@ -21,6 +21,8 @@ from goodfella.cli.app import (
     extract_chunk_text,
     print_welcome,
     main,
+    setup_readline,
+    save_readline_history,
 )
 from goodfella.cli.commands import handle_help
 
@@ -463,6 +465,68 @@ class TestSessionCommands:
 
         # O LLM nunca deve ser acionado para comandos desconhecidos
         mock_llm.stream.assert_not_called()
+
+    def test_setup_and_save_readline_history(self, tmp_path: Path):
+        history_file = tmp_path / ".goodfella_history"
+        history_file.write_text("_HiStOrY_V2_\n/previous_cmd\n", encoding="utf-8")
+
+        setup_readline(history_file=history_file, force=True)
+        save_readline_history(history_file=history_file)
+        assert history_file.exists()
+
+    def test_arrow_up_navigation_recalls_previous_command_in_terminal(self, tmp_path: Path):
+        import os
+        import pty
+        import sys
+        import subprocess
+
+        hist_file = tmp_path / "cmd_hist"
+        code = f"""
+from pathlib import Path
+from goodfella.cli.app import setup_readline
+from goodfella.cli.ui import console
+
+setup_readline(history_file=Path(r'{hist_file}'), force=True)
+_ = console.input('❯ ')
+s2 = console.input('❯ ')
+print(f'RECALLED:{{s2}}')
+"""
+
+        master, slave = pty.openpty()
+        env = os.environ.copy()
+        env["TERM"] = "xterm-256color"
+        proc = subprocess.Popen(
+            [sys.executable, "-c", code],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            close_fds=True,
+            env=env,
+        )
+        os.close(slave)
+
+        os.write(master, b"/status\n")
+        time.sleep(0.15)
+        # Envia a sequência de escape da seta para cima (\x1b[A) seguida de Enter
+        os.write(master, b"\x1b[A\n")
+        time.sleep(0.15)
+
+        output = b""
+        while True:
+            try:
+                chunk = os.read(master, 1024)
+                if not chunk:
+                    break
+                output += chunk
+            except OSError:
+                break
+
+        proc.wait()
+        os.close(master)
+
+        text = output.decode(errors="replace")
+        assert proc.returncode == 0
+        assert "RECALLED:/status" in text
 
 
 class TestFreeChatDynamicRAG:

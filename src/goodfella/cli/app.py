@@ -13,6 +13,14 @@ import sys
 import time
 import logging
 import warnings
+import atexit
+from pathlib import Path
+from typing import Any, Optional
+
+try:
+    import readline
+except ImportError:
+    readline = None
 
 # Suprime warnings e logs de bibliotecas de terceiros (ChromaDB, Langchain, Google GenAI, etc)
 warnings.filterwarnings("ignore")
@@ -20,7 +28,6 @@ logging.getLogger("chromadb").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("google_genai").setLevel(logging.ERROR)
 
-from typing import Any
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from goodfella.core.env import init_environment
@@ -32,6 +39,42 @@ from goodfella.llm.factory import get_llm
 from goodfella.llm.memory import load_history, save_message, clear_history
 from goodfella.cli.ui import console, show_spinner, show_timer_spinner
 from goodfella.cli.commands import handle_setup, handle_status, handle_refresh, handle_rebuild, handle_help, handle_review, handle_deep_review, handle_rule_add
+
+_readline_initialized = False
+
+def setup_readline(history_file: Optional[Path] = None, force: bool = False) -> None:
+    """Configura o GNU readline para suporte a navegação de histórico via setas (Up/Down)."""
+    global _readline_initialized
+    if not readline or (_readline_initialized and not force):
+        return
+    _readline_initialized = True
+
+    if history_file is None:
+        history_file = Path.home() / ".goodfella_history"
+
+    try:
+        if history_file.exists():
+            readline.read_history_file(str(history_file))
+    except Exception:
+        pass
+
+    try:
+        readline.set_history_length(1000)
+    except Exception:
+        pass
+
+    atexit.register(save_readline_history, history_file)
+
+def save_readline_history(history_file: Optional[Path] = None) -> None:
+    """Salva o histórico atual do readline no arquivo especificado."""
+    if not readline:
+        return
+    if history_file is None:
+        history_file = Path.home() / ".goodfella_history"
+    try:
+        readline.write_history_file(str(history_file))
+    except Exception:
+        pass
 
 def extract_chunk_text(content: Any) -> str:
     """Extrai texto normalizado de um chunk do LLM, suportando strings e listas de blocos."""
@@ -68,7 +111,8 @@ def main() -> None:
     inicia o loop REPL interativo com o usuário.
     """
     try:
-        # 1. Setup do ambiente e Banco de Dados
+        # 1. Setup do ambiente, readline e Banco de Dados
+        setup_readline()
         init_environment()
         
         with show_spinner("Sincronizando base de código e regras..."):
@@ -262,6 +306,7 @@ def main() -> None:
             save_message("user", user_input)
             save_message("ai", full_response)
             
+        save_readline_history()
     except Exception as e:
         console.print(f"\n[danger]Erro Fatal: {e}[/danger]")
         sys.exit(1)
